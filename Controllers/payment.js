@@ -1,74 +1,107 @@
 import { Payment } from "../Models/Payment.js";
-import Razorpay from "razorpay";
-import dotenv from 'dotenv'
+import Stripe from "stripe";
+import dotenv from "dotenv";
 
-dotenv.config()
+// ✅ Load Environment Variables
+dotenv.config();
 
-const razorpay = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID,
-  key_secret: process.env.RAZORPAY_KEY_SECRET,
-}); 
+const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+if (!stripeSecretKey) {
+  console.error("❌ STRIPE_SECRET_KEY is missing in .env file!");
+  process.exit(1);
+}
 
-// checkout
+const stripe = new Stripe(stripeSecretKey);
+
+// ✅ Checkout Route (Create Stripe Checkout Session)
 export const checkout = async (req, res) => {
-  const { amount, cartItems, userShipping, userId } = req.body;
+  try {
+    const { amount, cartItems, userShipping, userId } = req.body;
 
-  var options = {
-    amount: amount * 100, // amount in the smallest currency unit
-    currency: "INR",
-    receipt: `receipt_${Date.now()}`,
-  };
+    if (!amount || !cartItems || !userShipping || !userId) {
+      return res.status(400).json({ message: "Invalid request data" });
+    }
 
-  const order = await razorpay.orders.create(options);
+    // ✅ Create Stripe Checkout Session
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ["card"],
+      line_items: cartItems.map((item) => ({
+        price_data: {
+          currency: "INR",
+          product_data: { name: item.title },
+          unit_amount: item.price * 100, // Stripe requires amount in paise
+        },
+        quantity: item.qty,
+      })),
+      mode: "payment",
+      success_url: `${process.env.CLIENT_URL}/success`,
+      cancel_url: `${process.env.CLIENT_URL}/cancel`,
+      metadata: { userId },
+    });
 
-  res.json({
-    orderId: order.id,
-    amount: amount,
-    cartItems,
-    userShipping,
-    userId,
-    payStatus: "created",
-  });
+    res.json({ sessionId: session.id });
+
+  } catch (error) {
+    console.error("❌ Stripe Checkout Error:", error);
+    res.status(500).json({ message: "Stripe Payment Failed", error: error.message });
+  }
 };
 
-
-// verify , save to db
+// ✅ Verify Payment & Save to Database
 export const verify = async (req, res) => {
-  const {
-    orderId,
-    paymentId,
-    signature,
-    amount,
-    orderItems,
-    userId,
-    userShipping,
-  } = req.body;
+  try {
+    const { paymentIntentId, amount, orderItems, userId, userShipping } = req.body;
 
-  let orderConfirm = await Payment.create({
-    orderId,
-    paymentId,
-    signature,
-    amount,
-    orderItems,
-    userId,
-    userShipping,
-    payStatus: "paid",
-  });
+    if (!paymentIntentId) {
+      return res.status(400).json({ message: "Payment Intent ID required!" });
+    }
 
-  res.json({ message: "payment successfull..", success: true, orderConfirm });
+    // ✅ Fetch PaymentIntent Details
+    const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+
+    if (paymentIntent.status !== "succeeded") {
+      return res.status(400).json({ message: "Payment Not Successful", success: false });
+    }
+
+    // ✅ Save Order to Database
+    let orderConfirm = await Payment.create({
+      orderId: paymentIntent.id,
+      amount,
+      orderItems,
+      userId,
+      userShipping,
+      payStatus: "paid",
+      orderDate: new Date(),
+    });
+
+    res.json({ message: "Payment Successful", success: true, orderConfirm });
+
+  } catch (error) {
+    console.error("❌ Payment Verification Error:", error);
+    res.status(500).json({ message: "Payment Verification Failed" });
+  }
 };
 
-// user specificorder
-export const userOrder = async (req,res) =>{
-  let userId = req.user._id.toString();
-  // console.log(userId)
-  let orders = await Payment.find({ userId: userId }).sort({ orderDate :-1});
-  res.json(orders)
-}
+// ✅ Get Orders for a Specific User
+export const userOrder = async (req, res) => {
+  try {
+    let userId = req.user._id.toString();
+    let orders = await Payment.find({ userId }).sort({ orderDate: -1 });
 
-// user specificorder
-export const allOrders = async (req,res) =>{
- 
-  let orders = await Payment.find().sort({ orderDate :-1});
-  res.json(orders)
-}
+    res.json(orders);
+  } catch (error) {
+    console.error("❌ Error Fetching User Orders:", error);
+    res.status(500).json({ message: "Failed to fetch orders" });
+  }
+};
+
+// ✅ Get All Orders (Admin)
+export const allOrders = async (req, res) => {
+  try {
+    let orders = await Payment.find().sort({ orderDate: -1 });
+    res.json(orders);
+  } catch (error) {
+    console.error("❌ Error Fetching All Orders:", error);
+    res.status(500).json({ message: "Failed to fetch all orders" });
+  }
+};

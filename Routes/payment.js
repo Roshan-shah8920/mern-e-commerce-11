@@ -4,7 +4,7 @@ import {
   verify,
   userOrder,
   allOrders,
-} from "../Controllers/Payment.js";
+} from "../Controllers/payment.js";
 import { Authenticated } from '../Middlewares/auth.js';
 
 const router = express.Router();
