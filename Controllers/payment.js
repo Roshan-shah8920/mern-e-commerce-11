@@ -11,7 +11,10 @@ if (!stripeSecretKey) {
   process.exit(1);
 }
 
-const stripe = new Stripe(stripeSecretKey);
+// Initialize Stripe with API version (update version as needed)
+const stripe = new Stripe(stripeSecretKey, {
+  apiVersion: "2022-11-15", // aap yahan latest stable version de sakte hain
+});
 
 // ✅ Checkout Route (Create Stripe Checkout Session)
 export const checkout = async (req, res) => {
@@ -40,7 +43,6 @@ export const checkout = async (req, res) => {
     });
 
     res.json({ sessionId: session.id });
-
   } catch (error) {
     console.error("❌ Stripe Checkout Error:", error);
     res.status(500).json({ message: "Stripe Payment Failed", error: error.message });
@@ -75,7 +77,6 @@ export const verify = async (req, res) => {
     });
 
     res.json({ message: "Payment Successful", success: true, orderConfirm });
-
   } catch (error) {
     console.error("❌ Payment Verification Error:", error);
     res.status(500).json({ message: "Payment Verification Failed" });
@@ -87,7 +88,6 @@ export const userOrder = async (req, res) => {
   try {
     let userId = req.user._id.toString();
     let orders = await Payment.find({ userId }).sort({ orderDate: -1 });
-
     res.json(orders);
   } catch (error) {
     console.error("❌ Error Fetching User Orders:", error);
