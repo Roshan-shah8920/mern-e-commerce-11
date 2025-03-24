@@ -12,6 +12,7 @@ import cartRouter from "./Routes/cart.js";
 import addressRouter from "./Routes/address.js";
 import paymentRouter from "./Routes/payment.js";
 
+
 // ✅ Check .env file se STRIPE_SECRET_KEY mil raha hai ya nahi
 if (!process.env.STRIPE_SECRET_KEY) {
     console.error("❌ STRIPE_SECRET_KEY is missing in .env file!");
